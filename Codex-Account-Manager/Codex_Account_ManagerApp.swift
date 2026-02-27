@@ -13,8 +13,10 @@ struct Codex_Account_ManagerApp: App {
         WindowGroup {
             ContentView()
         }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 500, height: 400)
+        .windowStyle(.automatic)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 540, height: 600)
+        .defaultPosition(.center)
         .commands {
             CommandGroup(replacing: .newItem) {
                 // Remove default New command

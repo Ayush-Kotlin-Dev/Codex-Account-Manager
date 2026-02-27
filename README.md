@@ -9,6 +9,10 @@ A native macOS app for managing multiple OpenAI Codex CLI accounts. Easily switc
 - **OAuth Authentication**: Secure PKCE-based OAuth flow
 - **Persistent Storage**: Accounts saved locally with secure permissions
 - **Auto-Refresh**: Tokens refreshed automatically before expiry
+- **Modern UI**: Card-based design with avatars, toast notifications, and smooth animations
+- **Quick Switch**: Rotate between accounts when you hit rate limits
+
+
 
 ## Requirements
 
@@ -18,15 +22,30 @@ A native macOS app for managing multiple OpenAI Codex CLI accounts. Easily switc
 
 ## Installation
 
+### Automated Build Script
+
+After making any code changes, run the build script:
+
+```bash
+./archive-export-install.sh
+```
+
+This will:
+1. **Archive** the app (creates `.xcarchive`)
+2. **Export** a signed `.app` bundle
+3. **Install** to `/Applications/Codex-Account-Manager.app`
+
+Takes ~2-3 minutes. Requires admin password for moving to `/Applications`.
+
 ### From Source
 
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/codex-account-manager.git
-cd codex-account-manager/Codex-Account-Manager
+cd codex-account-manager
 ```
 
-2. Open in Xcode:
+2. Build using one of the scripts above, or open in Xcode:
 ```bash
 open Codex-Account-Manager.xcodeproj
 ```
@@ -72,14 +91,19 @@ The app writes authentication data to `~/.codex/auth.json`, the same file used b
 Codex-Account-Manager/
 ├── Codex-Account-Manager/
 │   ├── Codex_Account_ManagerApp.swift    # App entry point
-│   ├── ContentView.swift                 # Main UI
+│   ├── ContentView.swift                 # Main UI (card-based design)
 │   ├── Account.swift                     # Account model
 │   ├── AccountStore.swift                # Account persistence
 │   ├── OAuthService.swift                # OAuth + HTTP server
 │   ├── OAuthConfig.swift                 # OAuth constants
 │   ├── PKCEGenerator.swift               # PKCE code generation
 │   ├── JWTDecoder.swift                  # JWT token parsing
-│   └── CodexAuthWriter.swift             # Writes to ~/.codex/auth.json
+│   ├── CodexAuthWriter.swift             # Writes to ~/.codex/auth.json
+│   ├── Theme.swift                       # Design tokens & styling
+│   ├── ToastManager.swift                # Toast notifications
+│   ├── AvatarView.swift                  # Account avatars & UI components
+│   └── AddAccountSheet.swift             # OAuth authentication sheet
+├── archive-export-install.sh             # Build script (archive → export → install)
 └── README.md
 ```
 
