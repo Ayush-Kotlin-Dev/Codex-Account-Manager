@@ -10,6 +10,7 @@ import Foundation
 struct Account: Identifiable, Codable, Equatable {
     let id: UUID
     var email: String
+    var nickname: String?
     var accountId: String
     var planType: String
     var accessToken: String
@@ -23,6 +24,7 @@ struct Account: Identifiable, Codable, Equatable {
     init(
         id: UUID = UUID(),
         email: String,
+        nickname: String? = nil,
         accountId: String,
         planType: String,
         accessToken: String,
@@ -35,6 +37,7 @@ struct Account: Identifiable, Codable, Equatable {
     ) {
         self.id = id
         self.email = email
+        self.nickname = nickname
         self.accountId = accountId
         self.planType = planType
         self.accessToken = accessToken
@@ -55,7 +58,10 @@ struct Account: Identifiable, Codable, Equatable {
     }
     
     var displayName: String {
-        email
+        if let nickname, !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nickname
+        }
+        return email
     }
     
     var planDisplay: String {

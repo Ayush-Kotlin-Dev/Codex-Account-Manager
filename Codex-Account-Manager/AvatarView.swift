@@ -123,12 +123,12 @@ struct LoadingView: View {
         VStack(spacing: Theme.Spacing.lg) {
             ZStack {
                 Circle()
-                    .stroke(Theme.Colors.secondaryText.opacity(0.2), lineWidth: 4)
+                    .stroke(Theme.Colors.textSecondary.opacity(0.2), lineWidth: 4)
                     .frame(width: 50, height: 50)
                 
                 Circle()
                     .trim(from: 0, to: 0.75)
-                    .stroke(Theme.Colors.primary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(Theme.Colors.brand, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: 50, height: 50)
                     .rotationEffect(Angle(degrees: isAnimating ? 360 : 0))
                     .animation(
@@ -140,7 +140,7 @@ struct LoadingView: View {
             
             Text(message)
                 .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.secondaryText)
+                .foregroundStyle(Theme.Colors.textSecondary)
         }
         .onAppear {
             isAnimating = true
@@ -177,22 +177,22 @@ struct EmptyStateView: View {
             
             ZStack {
                 Circle()
-                    .fill(Theme.Colors.secondaryBackground)
+                    .fill(Theme.Colors.elevatedSurface)
                     .frame(width: 100, height: 100)
                 
                 Image(systemName: icon)
                     .font(.system(size: 44, weight: .light))
-                    .foregroundStyle(Theme.Colors.secondaryText)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             
             VStack(spacing: Theme.Spacing.sm) {
                 Text(title)
-                    .font(Theme.Typography.title2)
-                    .foregroundStyle(Theme.Colors.text)
+                    .font(Theme.Typography.title)
+                    .foregroundStyle(Theme.Colors.textPrimary)
                 
                 Text(message)
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Colors.secondaryText)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 280)
             }

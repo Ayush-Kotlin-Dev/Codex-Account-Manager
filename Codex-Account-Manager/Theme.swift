@@ -2,170 +2,195 @@
 //  Theme.swift
 //  Codex-Account-Manager
 //
-//  Centralized styling and design tokens
+//  Centralized design tokens and reusable visual primitives.
 //
 
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum Theme {
-    // MARK: - Colors
     enum Colors {
-        static let primary = Color.accentColor
+        static let brand = Color(red: 0.08, green: 0.45, blue: 0.95)
+        static let brandAccent = Color(red: 0.00, green: 0.72, blue: 0.71)
         static let success = Color.green
         static let warning = Color.orange
         static let error = Color.red
         static let info = Color.blue
-        
-        static let background = Color(NSColor.windowBackgroundColor)
-        static let secondaryBackground = Color(NSColor.controlBackgroundColor)
-        static let tertiaryBackground = Color(NSColor.underPageBackgroundColor)
-        
-        static let text = Color(NSColor.labelColor)
-        static let secondaryText = Color(NSColor.secondaryLabelColor)
-        static let tertiaryText = Color(NSColor.tertiaryLabelColor)
-        
-        static let divider = Color(NSColor.separatorColor)
-        static let cardBorder = Color(NSColor.gridColor)
+
+        static let background = platformColor(light: Color(red: 0.96, green: 0.97, blue: 0.99), dark: Color(red: 0.08, green: 0.10, blue: 0.14))
+        static let surface = platformColor(light: .white, dark: Color(red: 0.12, green: 0.14, blue: 0.19))
+        static let elevatedSurface = platformColor(light: Color(red: 0.98, green: 0.99, blue: 1.0), dark: Color(red: 0.15, green: 0.17, blue: 0.23))
+
+        static let textPrimary = platformColor(light: Color(red: 0.10, green: 0.12, blue: 0.18), dark: .white)
+        static let textSecondary = platformColor(light: Color(red: 0.31, green: 0.35, blue: 0.43), dark: Color.white.opacity(0.82))
+        static let textTertiary = platformColor(light: Color(red: 0.48, green: 0.52, blue: 0.61), dark: Color.white.opacity(0.62))
+
+        static let divider = platformColor(light: Color.black.opacity(0.08), dark: Color.white.opacity(0.12))
+        static let cardBorder = platformColor(light: Color.black.opacity(0.06), dark: Color.white.opacity(0.15))
+
+        static func status(for account: Account) -> Color {
+            if account.isExpired {
+                return error
+            }
+            if account.isRateLimited {
+                return warning
+            }
+            return success
+        }
+
+        static private func platformColor(light: Color, dark: Color) -> Color {
+            #if canImport(AppKit)
+            return Color(NSColor(name: nil, dynamicProvider: { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(dark) : NSColor(light)
+            }))
+            #elseif canImport(UIKit)
+            return Color(UIColor { traits in
+                traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+            })
+            #else
+            return light
+            #endif
+        }
     }
-    
-    // MARK: - Spacing
+
+    enum Gradient {
+        static let hero = LinearGradient(
+            colors: [Colors.brand, Colors.brandAccent],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+
+        static let panel = LinearGradient(
+            colors: [Colors.surface, Colors.elevatedSurface],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     enum Spacing {
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 16
-        static let xl: CGFloat = 24
-        static let xxl: CGFloat = 32
+        static let xxs: CGFloat = 4
+        static let xs: CGFloat = 8
+        static let sm: CGFloat = 12
+        static let md: CGFloat = 16
+        static let lg: CGFloat = 20
+        static let xl: CGFloat = 28
+        static let xxl: CGFloat = 36
     }
-    
-    // MARK: - Radius
+
     enum Radius {
-        static let sm: CGFloat = 6
-        static let md: CGFloat = 10
-        static let lg: CGFloat = 14
-        static let xl: CGFloat = 20
+        static let sm: CGFloat = 10
+        static let md: CGFloat = 14
+        static let lg: CGFloat = 18
+        static let xl: CGFloat = 24
     }
-    
-    // MARK: - Shadows
-    enum Shadows {
-        static let sm = ShadowStyle(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-        static let md = ShadowStyle(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
-        static let lg = ShadowStyle(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
-        
+
+    enum Shadow {
+        static let card = ShadowStyle(color: .black.opacity(0.08), radius: 14, y: 6)
+        static let floating = ShadowStyle(color: .black.opacity(0.16), radius: 18, y: 10)
+
         struct ShadowStyle {
             let color: Color
             let radius: CGFloat
-            let x: CGFloat
             let y: CGFloat
         }
     }
-    
-    // MARK: - Animation
-    enum Animation {
-        static let fast = SwiftUI.Animation.easeInOut(duration: 0.15)
-        static let normal = SwiftUI.Animation.easeInOut(duration: 0.25)
-        static let slow = SwiftUI.Animation.easeInOut(duration: 0.4)
-        static let spring = SwiftUI.Animation.spring(response: 0.4, dampingFraction: 0.8)
+
+    enum Motion {
+        static let quick = Animation.easeInOut(duration: 0.16)
+        static let smooth = Animation.easeInOut(duration: 0.24)
+        static let spring = Animation.spring(response: 0.35, dampingFraction: 0.85)
     }
-    
-    // MARK: - Typography
+
     enum Typography {
-        static let title = Font.system(size: 22, weight: .bold, design: .rounded)
-        static let title2 = Font.system(size: 18, weight: .semibold, design: .rounded)
-        static let title3 = Font.system(size: 15, weight: .semibold, design: .rounded)
-        static let body = Font.system(size: 13, weight: .regular)
-        static let caption = Font.system(size: 11, weight: .medium)
-        static let small = Font.system(size: 10, weight: .medium)
+        static let hero = Font.system(.largeTitle, design: .rounded).weight(.bold)
+        static let title = Font.system(.title2, design: .rounded).weight(.semibold)
+        static let section = Font.system(.headline, design: .rounded).weight(.semibold)
+        static let body = Font.body
+        static let caption = Font.caption
+        static let footnote = Font.footnote
     }
 }
-
-// MARK: - View Extensions
 
 extension View {
-    func cardStyle(isActive: Bool = false, isHovered: Bool = false) -> some View {
+    func panelStyle() -> some View {
         self
-            .padding(Theme.Spacing.lg)
+            .padding(Theme.Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                    .fill(Theme.Colors.secondaryBackground)
+                    .fill(Theme.Gradient.panel)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                            .stroke(isActive ? Theme.Colors.success.opacity(0.5) : Theme.Colors.cardBorder,
-                                    lineWidth: isActive ? 2 : 1)
+                            .stroke(Theme.Colors.cardBorder, lineWidth: 1)
                     )
             )
-            .shadow(
-                color: isHovered ? Theme.Shadows.lg.color : Theme.Shadows.sm.color,
-                radius: isHovered ? Theme.Shadows.lg.radius : Theme.Shadows.sm.radius,
-                x: isHovered ? Theme.Shadows.lg.x : Theme.Shadows.sm.x,
-                y: isHovered ? Theme.Shadows.lg.y : Theme.Shadows.sm.y
-            )
-            .animation(Theme.Animation.fast, value: isHovered)
-            .animation(Theme.Animation.normal, value: isActive)
+            .shadow(color: Theme.Shadow.card.color, radius: Theme.Shadow.card.radius, x: 0, y: Theme.Shadow.card.y)
     }
-    
-    func glassEffect() -> some View {
+
+    func interactiveRowStyle(isHighlighted: Bool) -> some View {
         self
-            .background(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                    .stroke(Theme.Colors.cardBorder.opacity(0.5), lineWidth: 0.5)
+            .padding(Theme.Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .fill(isHighlighted ? Theme.Colors.brand.opacity(0.14) : Theme.Colors.surface)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .stroke(isHighlighted ? Theme.Colors.brand.opacity(0.45) : Theme.Colors.cardBorder, lineWidth: isHighlighted ? 1.5 : 1)
+            )
+            .animation(Theme.Motion.smooth, value: isHighlighted)
     }
 }
 
-// MARK: - Status Colors
+struct CapsuleBadge: View {
+    let text: String
+    let color: Color
+    var icon: String? = nil
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xxs) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+            }
+
+            Text(text)
+                .font(Theme.Typography.caption.weight(.semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, Theme.Spacing.xs)
+        .padding(.vertical, Theme.Spacing.xxs)
+        .background(color.opacity(0.14))
+        .clipShape(Capsule())
+    }
+}
 
 extension Account {
     var statusColor: Color {
-        if isExpired {
-            return Theme.Colors.error
-        } else if isRateLimited {
-            return Theme.Colors.warning
-        }
-        return Theme.Colors.success
+        Theme.Colors.status(for: self)
     }
-    
+
     var statusIcon: String {
         if isExpired {
             return "xmark.circle.fill"
-        } else if isRateLimited {
+        }
+        if isRateLimited {
             return "exclamationmark.triangle.fill"
         }
         return "checkmark.circle.fill"
     }
-    
+
     var statusText: String {
         if isExpired {
             return "Expired"
-        } else if isRateLimited {
+        }
+        if isRateLimited {
             return "Rate Limited"
         }
         return "Active"
     }
-}
-
-// MARK: - Gradient Backgrounds
-
-enum Gradients {
-    static let primary = LinearGradient(
-        colors: [.blue.opacity(0.8), .purple.opacity(0.6)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
-    static let success = LinearGradient(
-        colors: [.green.opacity(0.8), .mint.opacity(0.6)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    
-    static let card = LinearGradient(
-        colors: [
-            Color(NSColor.controlBackgroundColor),
-            Color(NSColor.controlBackgroundColor).opacity(0.95)
-        ],
-        startPoint: .top,
-        endPoint: .bottom
-    )
 }

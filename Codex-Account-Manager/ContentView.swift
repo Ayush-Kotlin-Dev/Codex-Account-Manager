@@ -2,7 +2,8 @@
 //  ContentView.swift
 //  Codex-Account-Manager
 //
-//  Modern UI for managing OpenAI accounts with card-based design
+//  Refreshed account manager experience with adaptive split layout,
+//  stronger information hierarchy, and one-tap primary actions.
 //
 
 import SwiftUI
@@ -11,507 +12,643 @@ struct ContentView: View {
     @StateObject private var accountStore = AccountStore()
     @StateObject private var oauthService = OAuthService.shared
     @StateObject private var toastManager = ToastManager.shared
-    
+
     @State private var showingAddAccount = false
-    @State private var showingDeleteConfirmation: Account?
-    @State private var hoveredAccountId: UUID?
-    
+    @State private var showingDeleteConfirmation = false
+    @State private var accountPendingDelete: Account?
+    @State private var selectedAccountId: UUID?
+    @State private var activatingAccountId: UUID?
+    @State private var searchText = ""
+    @State private var filter: AccountFilter = .all
+    @State private var sort: AccountSort = .recentlyAdded
+    @State private var editingAccount: Account?
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.Spacing.xl) {
-                    // Header Card
-                    HeaderCard(
-                        accountCount: accountStore.accounts.count,
-                        activeAccount: accountStore.activeAccount
-                    )
-                    
-                    // Active Account Section
-                    if let activeAccount = accountStore.activeAccount {
-                        ActiveAccountCard(account: activeAccount)
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detailPane
+        }
+        .background(Theme.Colors.background)
+        .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showingAddAccount) {
+            AddAccountSheet { account in
+                handleNewAccount(account)
+            }
+        }
+        .sheet(item: $editingAccount) { account in
+            EditAccountSheet(account: account) { updated in
+                accountStore.updateAccount(updated)
+                toastManager.success("Saved account details")
+            }
+        }
+        .alert("Delete Account?", isPresented: $showingDeleteConfirmation, presenting: accountPendingDelete) { account in
+            Button("Cancel", role: .cancel) {
+                accountPendingDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                deleteAccount(account)
+            }
+        } message: { account in
+            Text("Remove \(account.email)? This only removes it from this app.")
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if accountStore.accounts.count > 1 {
+                    Button {
+                        Task {
+                            await accountStore.switchToNextAvailableAccount()
+                            toastManager.success("Switched to next account")
+                        }
+                    } label: {
+                        Label("Quick Switch", systemImage: "arrow.left.arrow.right")
                     }
-                    
-                    // Accounts Grid
-                    if accountStore.accounts.isEmpty {
-                        EmptyStateView(
-                            icon: "person.crop.circle.badge.plus",
-                            title: "No Accounts Yet",
-                            message: "Add your first OpenAI account to start managing your Codex CLI access",
-                            actionTitle: "Add Account",
-                            action: { showingAddAccount = true }
-                        )
-                        .frame(height: 300)
+                    .help("Switch to next available account")
+                }
+
+                Button {
+                    showingAddAccount = true
+                } label: {
+                    if oauthService.isAuthenticating {
+                        ProgressView()
+                            .controlSize(.small)
                     } else {
-                        AccountsSection(
-                            accounts: accountStore.accounts,
-                            activeAccountId: accountStore.activeAccountId,
-                            hoveredAccountId: $hoveredAccountId,
-                            onActivate: { account in
-                                Task {
-                                    await activateAccount(account)
-                                }
-                            },
-                            onDelete: { account in
-                                showingDeleteConfirmation = account
-                            }
-                        )
+                        Label("Add Account", systemImage: "plus")
                     }
-                    
-                    // Quick Actions
-                    if accountStore.accounts.count > 1 {
-                        QuickActionsCard {
-                            Task {
-                                await accountStore.switchToNextAvailableAccount()
-                                toastManager.success("Switched to next account")
-                            }
+                }
+                .disabled(oauthService.isAuthenticating)
+            }
+        }
+        .onAppear {
+            if selectedAccountId == nil {
+                selectedAccountId = accountStore.activeAccountId ?? accountStore.accounts.first?.id
+            }
+        }
+        .onChange(of: accountStore.accounts) { _, accounts in
+            if accounts.isEmpty {
+                selectedAccountId = nil
+                return
+            }
+            if selectedAccountId == nil || !accounts.contains(where: { $0.id == selectedAccountId }) {
+                selectedAccountId = accountStore.activeAccountId ?? accounts.first?.id
+            }
+        }
+        .toastContainer()
+        .frame(minWidth: 780, minHeight: 560)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            DashboardHeroCard(
+                accountCount: accountStore.accounts.count,
+                activeAccount: accountStore.activeAccount,
+                availableCount: accountStore.availableAccounts.count
+            )
+
+            AccountFilterBar(
+                searchText: $searchText,
+                filter: $filter,
+                sort: $sort,
+                accountCount: filteredAndSortedAccounts.count
+            )
+
+            if filteredAndSortedAccounts.isEmpty {
+                EmptyAccountsPanel(
+                    hasAnyAccounts: !accountStore.accounts.isEmpty,
+                    onAdd: { showingAddAccount = true },
+                    onResetFilters: resetFilters
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.sm) {
+                        ForEach(filteredAndSortedAccounts) { account in
+                            AccountRowCard(
+                                account: account,
+                                isActive: account.id == accountStore.activeAccountId,
+                                isSelected: account.id == selectedAccountId,
+                                isActivating: activatingAccountId == account.id,
+                                onSelect: {
+                                    selectedAccountId = account.id
+                                },
+                                onActivate: {
+                                    Task {
+                                        await activateAccount(account)
+                                    }
+                                },
+                                onEdit: {
+                                    editingAccount = account
+                                },
+                                onDelete: {
+                                    accountPendingDelete = account
+                                    showingDeleteConfirmation = true
+                                }
+                            )
                         }
                     }
+                    .padding(.bottom, Theme.Spacing.sm)
+                }
+            }
 
-                    // Version Footer
-                    VersionFooter()
-                }
-                .padding(Theme.Spacing.xl)
-            }
-            .background(Theme.Colors.background)
-            .navigationTitle("Codex Account Manager")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    AddAccountButton(isLoading: oauthService.isAuthenticating) {
-                        showingAddAccount = true
-                    }
-                }
-            }
-            .sheet(isPresented: $showingAddAccount) {
-                AddAccountSheet { account in
-                    handleNewAccount(account)
-                }
-            }
-            .alert("Delete Account?", isPresented: .constant(showingDeleteConfirmation != nil), presenting: showingDeleteConfirmation) { account in
-                Button("Cancel", role: .cancel) {
-                    showingDeleteConfirmation = nil
-                }
-                Button("Delete", role: .destructive) {
-                    deleteAccount(account)
-                }
-            } message: { account in
-                Text("Remove \(account.email)? This won't affect your OpenAI account, only removes it from this app.")
-            }
-            .toastContainer()
+            VersionFooter()
         }
-        .frame(minWidth: 520, minHeight: 500)
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.background)
     }
-    
+
+    @ViewBuilder
+    private var detailPane: some View {
+        if let selected = selectedAccount {
+            AccountDetailPanel(
+                account: selected,
+                isActive: selected.id == accountStore.activeAccountId,
+                onActivate: {
+                    Task {
+                        await activateAccount(selected)
+                    }
+                },
+                onEdit: {
+                    editingAccount = selected
+                },
+                onDelete: {
+                    accountPendingDelete = selected
+                    showingDeleteConfirmation = true
+                }
+            )
+            .padding(Theme.Spacing.lg)
+            .background(Theme.Colors.background)
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        } else {
+            EmptyStateView(
+                icon: "person.2.slash",
+                title: "No Account Selected",
+                message: "Select an account from the list to view details and manage session status.",
+                actionTitle: accountStore.accounts.isEmpty ? "Add Account" : nil,
+                action: accountStore.accounts.isEmpty ? { showingAddAccount = true } : nil
+            )
+            .padding(Theme.Spacing.lg)
+            .background(Theme.Colors.background)
+        }
+    }
+
+    private var selectedAccount: Account? {
+        guard let selectedAccountId else { return nil }
+        return accountStore.accounts.first { $0.id == selectedAccountId }
+    }
+
+    private var filteredAndSortedAccounts: [Account] {
+        let searched = accountStore.accounts.filter { account in
+            if searchText.isEmpty {
+                return true
+            }
+            let query = searchText.lowercased()
+            return account.email.lowercased().contains(query)
+                || account.displayName.lowercased().contains(query)
+                || account.planDisplay.lowercased().contains(query)
+        }
+
+        let filtered = searched.filter { account in
+            switch filter {
+            case .all:
+                return true
+            case .active:
+                return account.id == accountStore.activeAccountId
+            case .available:
+                return !account.isExpired && !account.isRateLimited
+            case .expired:
+                return account.isExpired
+            case .rateLimited:
+                return account.isRateLimited
+            }
+        }
+
+        switch sort {
+        case .recentlyAdded:
+            return filtered.sorted { $0.addedAt > $1.addedAt }
+        case .name:
+            return filtered.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        case .expirySoonest:
+            return filtered.sorted { $0.expiresAt < $1.expiresAt }
+        }
+    }
+
     private func activateAccount(_ account: Account) async {
+        activatingAccountId = account.id
         await accountStore.activateAccount(id: account.id)
+        activatingAccountId = nil
+
         if accountStore.errorMessage == nil {
             toastManager.success("Activated \(account.email)")
         } else {
             toastManager.error(accountStore.errorMessage ?? "Failed to activate account")
         }
     }
-    
+
     private func handleNewAccount(_ account: Account) {
         accountStore.addAccount(account)
+        selectedAccountId = account.id
         showingAddAccount = false
         toastManager.success("Account added successfully")
-        
-        // Auto-activate if it's the first account
+
         if accountStore.accounts.count == 1 {
             Task {
                 await accountStore.activateAccount(id: account.id)
             }
         }
     }
-    
+
     private func deleteAccount(_ account: Account) {
         accountStore.removeAccount(id: account.id)
-        showingDeleteConfirmation = nil
+        if selectedAccountId == account.id {
+            selectedAccountId = accountStore.activeAccountId ?? accountStore.accounts.first?.id
+        }
+        accountPendingDelete = nil
         toastManager.info("Account removed")
     }
+
+    private func resetFilters() {
+        searchText = ""
+        filter = .all
+        sort = .recentlyAdded
+    }
 }
 
-// MARK: - Header Card
+private enum AccountFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case active = "Active"
+    case available = "Ready"
+    case expired = "Expired"
+    case rateLimited = "Limited"
 
-struct HeaderCard: View {
+    var id: String { rawValue }
+}
+
+private enum AccountSort: String, CaseIterable, Identifiable {
+    case recentlyAdded = "Recently Added"
+    case name = "Name"
+    case expirySoonest = "Expiry"
+
+    var id: String { rawValue }
+}
+
+private struct DashboardHeroCard: View {
     let accountCount: Int
     let activeAccount: Account?
-    
-    var body: some View {
-        HStack(spacing: Theme.Spacing.lg) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text("Account Manager")
-                    .font(Theme.Typography.title)
-                    .foregroundStyle(Theme.Colors.text)
-                
-                HStack(spacing: Theme.Spacing.sm) {
-                    StatusPill(
-                        text: "\(accountCount) account" + (accountCount == 1 ? "" : "s"),
-                        color: .blue
-                    )
-                    
-                    if activeAccount != nil {
-                        StatusPill(
-                            text: "Active",
-                            color: .green,
-                            icon: "checkmark"
-                        )
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.blue, .purple],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        }
-        .padding(Theme.Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                .fill(Theme.Colors.secondaryBackground)
-                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-        )
-    }
-}
+    let availableCount: Int
 
-struct StatusPill: View {
-    let text: String
-    let color: Color
-    var icon: String? = nil
-    
     var body: some View {
-        HStack(spacing: 4) {
-            if let icon = icon {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
-            }
-            Text(text)
-                .font(Theme.Typography.caption)
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
-    }
-}
-
-// MARK: - Active Account Card
-
-struct ActiveAccountCard: View {
-    let account: Account
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
-                Label("Currently Active", systemImage: "checkmark.seal.fill")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(.green)
-                
-                Spacer()
-            }
-            
-            HStack(spacing: Theme.Spacing.md) {
-                AvatarView(email: account.email, size: 48, isActive: true)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(account.displayName)
-                        .font(Theme.Typography.title3)
-                        .foregroundStyle(Theme.Colors.text)
-                    
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Text(account.planDisplay)
-                            .font(Theme.Typography.caption)
-                            .foregroundStyle(Theme.Colors.secondaryText)
-                        
-                        Text("•")
-                            .foregroundStyle(Theme.Colors.tertiaryText)
-                        
-                        if account.isExpired {
-                            Text("Session expired")
-                                .font(Theme.Typography.caption)
-                                .foregroundStyle(.red)
-                        } else {
-                            Text("Expires in \(formatDuration(account.expiresIn))")
-                                .font(Theme.Typography.caption)
-                                .foregroundStyle(Theme.Colors.secondaryText)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Codex Account Manager")
+                        .font(Theme.Typography.title)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text("Securely switch between OpenAI sessions")
+                        .font(Theme.Typography.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
                 }
-                
+
                 Spacer()
+
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Theme.Gradient.hero)
+                    .accessibilityHidden(true)
+            }
+
+            HStack(spacing: Theme.Spacing.xs) {
+                CapsuleBadge(text: "\(accountCount) total", color: Theme.Colors.brand)
+                CapsuleBadge(text: "\(availableCount) ready", color: Theme.Colors.success)
+                if activeAccount != nil {
+                    CapsuleBadge(text: "active", color: Theme.Colors.success, icon: "checkmark")
+                }
             }
         }
-        .padding(Theme.Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                .fill(Gradients.success.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                        .stroke(.green.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-    
-    private func formatDuration(_ interval: TimeInterval) -> String {
-        let hours = Int(interval) / 3600
-        if hours < 1 {
-            let minutes = Int(interval) / 60
-            return "\(minutes)m"
-        } else if hours < 24 {
-            return "\(hours)h"
-        } else {
-            let days = hours / 24
-            return "\(days)d"
-        }
+        .panelStyle()
+        .accessibilityElement(children: .combine)
     }
 }
 
-// MARK: - Accounts Section
+private struct AccountFilterBar: View {
+    @Binding var searchText: String
+    @Binding var filter: AccountFilter
+    @Binding var sort: AccountSort
+    let accountCount: Int
 
-struct AccountsSection: View {
-    let accounts: [Account]
-    let activeAccountId: UUID?
-    @Binding var hoveredAccountId: UUID?
-    let onActivate: (Account) -> Void
-    let onDelete: (Account) -> Void
-    
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            Text("All Accounts")
-                .font(Theme.Typography.title3)
-                .foregroundStyle(Theme.Colors.text)
-            
-            LazyVStack(spacing: Theme.Spacing.md) {
-                ForEach(accounts) { account in
-                    AccountCard(
-                        account: account,
-                        isActive: account.id == activeAccountId,
-                        isHovered: hoveredAccountId == account.id,
-                        onActivate: { onActivate(account) },
-                        onDelete: { onDelete(account) }
-                    )
-                    .onHover { hovering in
-                        withAnimation(Theme.Animation.fast) {
-                            hoveredAccountId = hovering ? account.id : nil
-                        }
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            TextField("Search by email, name, or plan", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Search accounts")
+
+            HStack {
+                Picker("Status", selection: $filter) {
+                    ForEach(AccountFilter.allCases) { option in
+                        Text(option.rawValue).tag(option)
                     }
                 }
+                .pickerStyle(.menu)
+
+                Picker("Sort", selection: $sort) {
+                    ForEach(AccountSort.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Spacer()
+
+                Text("\(accountCount)")
+                    .font(Theme.Typography.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.xs)
+                    .padding(.vertical, Theme.Spacing.xxs)
+                    .background(Theme.Colors.elevatedSurface)
+                    .clipShape(Capsule())
+                    .accessibilityLabel("\(accountCount) accounts shown")
             }
         }
+        .panelStyle()
     }
 }
 
-struct AccountCard: View {
+private struct AccountRowCard: View {
     let account: Account
     let isActive: Bool
-    let isHovered: Bool
+    let isSelected: Bool
+    let isActivating: Bool
+    let onSelect: () -> Void
     let onActivate: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
-    
-    var status: StatusIndicator.Status {
-        if isActive { return .active }
-        if account.isExpired { return .expired }
-        if account.isRateLimited { return .rateLimited }
-        return .inactive
-    }
-    
+
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            AvatarView(email: account.email, size: 40, isActive: isActive)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.displayName)
-                    .font(Theme.Typography.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Theme.Colors.text)
-                
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(account.planDisplay)
-                        .font(Theme.Typography.small)
-                        .foregroundStyle(Theme.Colors.secondaryText)
-                    
-                    Text("•")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.tertiaryText)
-                    
-                    StatusBadge(account: account)
-                }
-            }
-            
-            Spacer()
-            
-            if isActive {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.green)
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Button(action: onActivate) {
-                    Text("Activate")
+        Button(action: onSelect) {
+            HStack(spacing: Theme.Spacing.sm) {
+                AvatarView(email: account.email, size: 42, isActive: isActive)
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(account.displayName)
+                        .font(Theme.Typography.body.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                        .lineLimit(1)
+
+                    Text(account.email)
                         .font(Theme.Typography.caption)
-                        .fontWeight(.medium)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .lineLimit(1)
+
+                    HStack(spacing: Theme.Spacing.xxs) {
+                        CapsuleBadge(text: account.planDisplay, color: Theme.Colors.info)
+                        CapsuleBadge(text: account.statusText, color: account.statusColor, icon: "circle.fill")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .fill(Theme.Colors.secondaryBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                        .stroke(
-                            isActive ? Color.green.opacity(0.4) : Theme.Colors.divider,
-                            lineWidth: isActive ? 2 : 0.5
-                        )
-                )
-        )
-        .shadow(
-            color: isHovered ? .black.opacity(0.08) : .clear,
-            radius: isHovered ? 8 : 0,
-            x: 0,
-            y: isHovered ? 4 : 0
-        )
-        .contentShape(Rectangle())
-        .contextMenu {
-            if !isActive {
-                Button(action: onActivate) {
-                    Label("Activate", systemImage: "checkmark.circle")
+
+                Spacer(minLength: Theme.Spacing.xs)
+
+                VStack(alignment: .trailing, spacing: Theme.Spacing.xxs) {
+                    if isActive {
+                        Label("Active", systemImage: "checkmark.circle.fill")
+                            .font(Theme.Typography.caption.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.success)
+                    } else if isActivating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button("Activate", action: onActivate)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+
+                    Menu {
+                        Button("Edit", action: onEdit)
+                        if !isActive {
+                            Button("Activate", action: onActivate)
+                        }
+                        Button("Delete", role: .destructive, action: onDelete)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.Colors.textSecondary)
                 }
             }
-            
-            Divider()
-            
-            Button(role: .destructive, action: onDelete) {
-                Label("Remove", systemImage: "trash")
-            }
+            .contentShape(Rectangle())
         }
-        .animation(Theme.Animation.fast, value: isHovered)
-        .animation(Theme.Animation.normal, value: isActive)
+        .buttonStyle(.plain)
+        .interactiveRowStyle(isHighlighted: isSelected || isActive)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens account details")
     }
 }
 
-struct StatusBadge: View {
+private struct AccountDetailPanel: View {
     let account: Account
-    
+    let isActive: Bool
+    let onActivate: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
     var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: statusIcon)
-                .font(.system(size: 8))
-            Text(statusText)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                    AvatarView(email: account.email, size: 64, isActive: isActive)
+
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        Text(account.displayName)
+                            .font(Theme.Typography.hero)
+                            .foregroundStyle(Theme.Colors.textPrimary)
+
+                        Text(account.email)
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+
+                        HStack(spacing: Theme.Spacing.xs) {
+                            CapsuleBadge(text: account.planDisplay, color: Theme.Colors.info)
+                            CapsuleBadge(text: account.statusText, color: account.statusColor, icon: "circle.fill")
+                            if isActive {
+                                CapsuleBadge(text: "Current Session", color: Theme.Colors.success, icon: "checkmark")
+                            }
+                        }
+                    }
+
+                    Spacer()
+                }
+
+                HStack(spacing: Theme.Spacing.sm) {
+                    if isActive {
+                        Label("Currently Active", systemImage: "checkmark.circle.fill")
+                            .font(Theme.Typography.body.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.success)
+                    } else {
+                        Button(action: onActivate) {
+                            Label("Activate Account", systemImage: "bolt.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    Button(action: onEdit) {
+                        Label("Edit", systemImage: "pencil")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Group {
+                    Text("Session")
+                        .font(Theme.Typography.section)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    DetailLine(label: "Expires", value: expirationText)
+                    DetailLine(label: "Added", value: account.addedAt.formatted(date: .abbreviated, time: .shortened))
+                    DetailLine(label: "Last Used", value: account.lastUsedAt?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet")
+                }
+
+                Group {
+                    Text("Identifiers")
+                        .font(Theme.Typography.section)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    DetailLine(label: "Account ID", value: account.accountId)
+                    DetailLine(label: "Token State", value: account.isExpired ? "Expired" : "Valid")
+                }
+            }
+            .panelStyle()
+            .padding(.bottom, Theme.Spacing.md)
         }
-        .font(Theme.Typography.small)
-        .foregroundStyle(statusColor)
+        .accessibilityElement(children: .contain)
     }
-    
-    private var statusColor: Color {
-        if account.isExpired { return .red }
-        if account.isRateLimited { return .orange }
-        return .green
-    }
-    
-    private var statusIcon: String {
-        if account.isExpired { return "xmark" }
-        if account.isRateLimited { return "exclamationmark" }
-        return "checkmark"
-    }
-    
-    private var statusText: String {
-        if account.isExpired { return "Expired" }
-        if account.isRateLimited { return "Limited" }
-        return "Ready"
+
+    private var expirationText: String {
+        if account.isExpired {
+            return "Expired"
+        }
+
+        return account.expiresAt.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
-// MARK: - Quick Actions Card
+private struct DetailLine: View {
+    let label: String
+    let value: String
 
-struct QuickActionsCard: View {
-    let onSwitch: () -> Void
-    
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: "arrow.right.arrow.left.circle.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(.blue)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Quick Switch")
-                    .font(Theme.Typography.body)
-                    .fontWeight(.medium)
-                
-                Text("Instantly switch to the next available account")
-                    .font(Theme.Typography.caption)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-            }
-            
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Text(label)
+                .font(Theme.Typography.footnote.weight(.semibold))
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .frame(width: 96, alignment: .leading)
+
+            Text(value)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Colors.textPrimary)
+                .textSelection(.enabled)
+
             Spacer()
-            
-            Button(action: onSwitch) {
-                Label("Switch", systemImage: "arrow.right")
-                    .font(Theme.Typography.caption)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
-        .padding(Theme.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .fill(Theme.Colors.secondaryBackground)
-        )
     }
 }
 
-// MARK: - Add Account Button
-
-struct AddAccountButton: View {
-    let isLoading: Bool
-    let action: () -> Void
+private struct EmptyAccountsPanel: View {
+    let hasAnyAccounts: Bool
+    let onAdd: () -> Void
+    let onResetFilters: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 16, height: 16)
-            } else {
-                Image(systemName: "plus")
-            }
+        VStack(spacing: Theme.Spacing.md) {
+            EmptyStateView(
+                icon: hasAnyAccounts ? "line.3.horizontal.decrease.circle" : "person.crop.circle.badge.plus",
+                title: hasAnyAccounts ? "No Matching Accounts" : "No Accounts Yet",
+                message: hasAnyAccounts
+                    ? "Try clearing your search or filter to see more results."
+                    : "Add your first account to manage Codex CLI authentication.",
+                actionTitle: hasAnyAccounts ? "Clear Filters" : "Add Account",
+                action: hasAnyAccounts ? onResetFilters : onAdd
+            )
+            .frame(minHeight: 260)
         }
-        .disabled(isLoading)
+        .panelStyle()
     }
 }
 
-// MARK: - Version Footer
+private struct EditAccountSheet: View {
+    let account: Account
+    let onSave: (Account) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var nickname: String
+    @State private var planType: String
+
+    init(account: Account, onSave: @escaping (Account) -> Void) {
+        self.account = account
+        self.onSave = onSave
+        _nickname = State(initialValue: account.nickname ?? "")
+        _planType = State(initialValue: account.planType)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Profile") {
+                    TextField("Display name", text: $nickname)
+                        .textContentType(.nickname)
+
+                    TextField("Plan", text: $planType)
+#if os(iOS)
+                        .textInputAutocapitalization(.never)
+#endif
+                }
+
+                Section {
+                    Text("UX Note: Display name is optional and only affects local UI labeling.")
+                        .font(Theme.Typography.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Edit Account")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        var updated = account
+                        updated.nickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? nil
+                            : nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.planType = planType.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(updated)
+                        dismiss()
+                    }
+                    .disabled(planType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 460, minHeight: 320)
+    }
+}
 
 struct VersionFooter: View {
     var body: some View {
         HStack {
             Spacer()
-
-            VStack(spacing: 2) {
-                Text("Codex Account Manager")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Theme.Colors.secondaryText)
-
-                Text("Version \(appVersion) (Build \(buildNumber))")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.Colors.tertiaryText)
-            }
-
+            Text("Version \(appVersion) (\(buildNumber))")
+                .font(Theme.Typography.footnote)
+                .foregroundStyle(Theme.Colors.textTertiary)
             Spacer()
         }
-        .padding(.top, Theme.Spacing.md)
-        .padding(.bottom, Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.xs)
     }
 
     private var appVersion: String {
@@ -523,6 +660,45 @@ struct VersionFooter: View {
     }
 }
 
-#Preview {
+#Preview("Main") {
     ContentView()
+}
+
+#Preview("Detail Card") {
+    AccountDetailPanel(
+        account: .previewActive,
+        isActive: true,
+        onActivate: {},
+        onEdit: {},
+        onDelete: {}
+    )
+    .padding()
+    .background(Theme.Colors.background)
+}
+
+#Preview("Edit Sheet") {
+    EditAccountSheet(account: .previewActive) { _ in }
+}
+
+#Preview("Empty State") {
+    EmptyAccountsPanel(hasAnyAccounts: false, onAdd: {}, onResetFilters: {})
+        .padding()
+        .background(Theme.Colors.background)
+}
+
+private extension Account {
+    static var previewActive: Account {
+        Account(
+            email: "aya@example.com",
+            nickname: "Ayush",
+            accountId: "acct_12345",
+            planType: "pro",
+            accessToken: "token",
+            refreshToken: "refresh",
+            idToken: "id",
+            expiresAt: .now.addingTimeInterval(60 * 60 * 5),
+            addedAt: .now.addingTimeInterval(-60 * 60 * 24 * 3),
+            lastUsedAt: .now.addingTimeInterval(-60 * 20)
+        )
+    }
 }

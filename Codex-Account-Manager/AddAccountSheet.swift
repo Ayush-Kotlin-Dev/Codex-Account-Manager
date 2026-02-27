@@ -2,123 +2,103 @@
 //  AddAccountSheet.swift
 //  Codex-Account-Manager
 //
-//  Modern OAuth authentication sheet with improved UX
+//  OAuth authentication sheet with clear state feedback.
 //
 
 import SwiftUI
 
 struct AddAccountSheet: View {
     let onAccountAdded: (Account) -> Void
-    
+
     @StateObject private var oauthService = OAuthService.shared
     @StateObject private var toastManager = ToastManager.shared
     @Environment(\.dismiss) private var dismiss
-    
-    @State private var isAnimating = false
-    
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Content
-                VStack(spacing: Theme.Spacing.xl) {
-                    Spacer()
-                    
-                    // Icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [.blue.opacity(0.2), .purple.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 100, height: 100)
-                        
-                        Image(systemName: oauthService.isAuthenticating ? "lock.open" : "lock.shield")
-                            .font(.system(size: 44, weight: .light))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.blue, .purple],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .rotationEffect(oauthService.isAuthenticating ? Angle(degrees: 360) : Angle(degrees: 0))
-                            .animation(.easeInOut(duration: 0.6), value: oauthService.isAuthenticating)
-                    }
-                    
-                    // Title & Description
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Text(oauthService.isAuthenticating ? "Authenticating..." : "Add OpenAI Account")
-                            .font(Theme.Typography.title2)
-                            .foregroundStyle(Theme.Colors.text)
-                        
-                        if oauthService.isAuthenticating {
-                            VStack(spacing: Theme.Spacing.md) {
-                                LoadingView(message: "Waiting for browser authentication...")
-                                    .scaleEffect(0.8)
-                                
-                                Text("Complete the login in your browser")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundStyle(Theme.Colors.secondaryText)
-                            }
-                        } else {
-                            Text("Sign in with your OpenAI account to add it to Codex Account Manager")
-                                .font(Theme.Typography.body)
-                                .foregroundStyle(Theme.Colors.secondaryText)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 320)
-                        }
-                    }
-                    
-                    // Error
-                    if let error = oauthService.authError {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.red)
-                            Text(error)
-                                .font(Theme.Typography.caption)
-                                .foregroundStyle(.red)
-                        }
-                        .padding(Theme.Spacing.md)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.Radius.md)
-                                .fill(Color.red.opacity(0.08))
-                        )
-                    }
-                    
-                    Spacer()
-                    
-                    // Action Button
-                    if !oauthService.isAuthenticating {
-                        VStack(spacing: Theme.Spacing.md) {
-                            Button(action: startAuthentication) {
-                                HStack(spacing: Theme.Spacing.sm) {
-                                    Image(systemName: "safari")
-                                    Text("Open Browser & Sign In")
-                                }
-                                .font(Theme.Typography.body)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: 280)
-                                .padding(.vertical, Theme.Spacing.md)
-                            }
-                            .buttonStyle(.borderedProminent)
+            VStack(spacing: Theme.Spacing.lg) {
+                Spacer(minLength: Theme.Spacing.sm)
+
+                ZStack {
+                    Circle()
+                        .fill(Theme.Gradient.hero.opacity(0.16))
+                        .frame(width: 104, height: 104)
+
+                    if oauthService.isAuthenticating {
+                        ProgressView()
                             .controlSize(.large)
-                            
-                            Text("Your credentials are securely stored in Keychain")
-                                .font(Theme.Typography.small)
-                                .foregroundStyle(Theme.Colors.tertiaryText)
-                        }
+                            .tint(Theme.Colors.brand)
+                    } else {
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 42, weight: .light))
+                            .foregroundStyle(Theme.Gradient.hero)
                     }
                 }
-                .padding(Theme.Spacing.xl)
+                .accessibilityHidden(true)
+
+                VStack(spacing: Theme.Spacing.xs) {
+                    Text(oauthService.isAuthenticating ? "Authenticating" : "Add OpenAI Account")
+                        .font(Theme.Typography.title)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+
+                    Text(
+                        oauthService.isAuthenticating
+                        ? "Finish sign-in in your browser. This screen updates automatically."
+                        : "Sign in with OpenAI to add an account for Codex CLI session switching."
+                    )
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
+                }
+
+                if oauthService.isAuthenticating {
+                    LoadingView(message: "Waiting for authentication callback...")
+                        .frame(maxWidth: .infinity)
+                        .panelStyle()
+                }
+
+                if let error = oauthService.authError {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.Colors.error)
+
+                        Text(error)
+                            .font(Theme.Typography.footnote)
+                            .foregroundStyle(Theme.Colors.error)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(Theme.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                            .fill(Theme.Colors.error.opacity(0.1))
+                    )
+                    .accessibilityLabel("Authentication error: \(error)")
+                }
+
+                Spacer()
+
+                VStack(spacing: Theme.Spacing.xs) {
+                    Button(action: startAuthentication) {
+                        Label(
+                            oauthService.isAuthenticating ? "Opening Browser" : "Open Browser & Sign In",
+                            systemImage: "safari"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(oauthService.isAuthenticating)
+
+                    Text("Credentials are saved securely in Keychain.")
+                        .font(Theme.Typography.footnote)
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
             }
-        .frame(width: 420, height: 400)
-        .background(Theme.Colors.background)
-        .navigationTitle("Add Account")
-        .toolbar {
+            .padding(Theme.Spacing.lg)
+            .background(Theme.Colors.background)
+            .navigationTitle("Add Account")
+            .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         dismiss()
@@ -127,8 +107,9 @@ struct AddAccountSheet: View {
                 }
             }
         }
+        .frame(minWidth: 500, minHeight: 500)
     }
-    
+
     private func startAuthentication() {
         Task {
             do {

@@ -59,7 +59,7 @@ class ToastManager: ObservableObject {
     }
     
     func dismiss(_ toast: Toast) {
-        withAnimation(Theme.Animation.spring) {
+        withAnimation(Theme.Motion.spring) {
             toasts.removeAll { $0.id == toast.id }
         }
     }
@@ -97,7 +97,7 @@ struct ToastView: View {
             
             Text(toast.message)
                 .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Colors.text)
+                .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
             
             Spacer()
@@ -105,15 +105,15 @@ struct ToastView: View {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.Colors.secondaryText)
+                    .foregroundStyle(Theme.Colors.textSecondary)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(Theme.Colors.surface)
                 .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
         )
         .overlay(
@@ -123,7 +123,7 @@ struct ToastView: View {
         .opacity(isVisible ? 1 : 0)
         .offset(y: isVisible ? 0 : -20)
         .onAppear {
-            withAnimation(Theme.Animation.spring) {
+            withAnimation(Theme.Motion.spring) {
                 isVisible = true
             }
         }
