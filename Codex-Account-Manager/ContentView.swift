@@ -66,6 +66,9 @@ struct ContentView: View {
                             }
                         }
                     }
+
+                    // Version Footer
+                    VersionFooter()
                 }
                 .padding(Theme.Spacing.xl)
             }
@@ -472,7 +475,7 @@ struct QuickActionsCard: View {
 struct AddAccountButton: View {
     let isLoading: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             if isLoading {
@@ -484,6 +487,39 @@ struct AddAccountButton: View {
             }
         }
         .disabled(isLoading)
+    }
+}
+
+// MARK: - Version Footer
+
+struct VersionFooter: View {
+    var body: some View {
+        HStack {
+            Spacer()
+
+            VStack(spacing: 2) {
+                Text("Codex Account Manager")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Theme.Colors.secondaryText)
+
+                Text("Version \(appVersion) (Build \(buildNumber))")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Colors.tertiaryText)
+            }
+
+            Spacer()
+        }
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.sm)
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
     }
 }
 
