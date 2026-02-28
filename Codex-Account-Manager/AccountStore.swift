@@ -14,6 +14,8 @@ class AccountStore: ObservableObject {
     @Published private(set) var activeAccountId: UUID?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var isFetchingQuotaForId: Set<UUID> = []
+    @Published var quotaFetchError: String?
     
     private let storageFile: URL
     private let fileManager = FileManager.default
@@ -129,6 +131,45 @@ class AccountStore: ObservableObject {
         let nextAccount = accounts[nextIndex]
         
         await activateAccount(id: nextAccount.id)
+    }
+    
+    // MARK: - Quota
+    
+    /// Fetch and persist quota information for a single account.
+    func fetchQuota(for accountId: UUID) async {
+        guard let account = accounts.first(where: { $0.id == accountId }) else { return }
+        guard !account.isExpired else { return }
+        
+        isFetchingQuotaForId.insert(accountId)
+        defer { isFetchingQuotaForId.remove(accountId) }
+        
+        do {
+            let quota = try await QuotaService.shared.fetchQuota(
+                accessToken: account.accessToken,
+                accountId: account.accountId
+            )
+            var updated = account
+            updated.quotaInfo = quota
+            // Update planType from quota API if present
+            if let planType = quota.planType, !planType.isEmpty {
+                updated.planType = planType
+            }
+            updateAccount(updated)
+            quotaFetchError = nil
+        } catch {
+            quotaFetchError = "Quota fetch failed: \(error.localizedDescription)"
+        }
+    }
+    
+    /// Fetch quota for all accounts concurrently.
+    func fetchAllQuotas() async {
+        await withTaskGroup(of: Void.self) { group in
+            for account in accounts where !account.isExpired {
+                group.addTask {
+                    await self.fetchQuota(for: account.id)
+                }
+            }
+        }
     }
     
     // MARK: - Persistence

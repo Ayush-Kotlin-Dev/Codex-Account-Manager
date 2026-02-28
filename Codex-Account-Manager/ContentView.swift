@@ -83,6 +83,10 @@ struct ContentView: View {
             if selectedAccountId == nil {
                 selectedAccountId = accountStore.activeAccountId ?? accountStore.accounts.first?.id
             }
+            // Fetch quotas for all accounts on launch
+            Task {
+                await accountStore.fetchAllQuotas()
+            }
         }
         .onChange(of: accountStore.accounts) { _, accounts in
             if accounts.isEmpty {
@@ -91,6 +95,22 @@ struct ContentView: View {
             }
             if selectedAccountId == nil || !accounts.contains(where: { $0.id == selectedAccountId }) {
                 selectedAccountId = accountStore.activeAccountId ?? accounts.first?.id
+            }
+        }
+        .onChange(of: selectedAccountId) { _, newId in
+            // Fetch quota for newly-selected account if stale (> 5 mins old)
+            guard let id = newId,
+                  let account = accountStore.accounts.first(where: { $0.id == id }) else { return }
+            let shouldRefresh: Bool
+            if let lastFetched = account.quotaInfo?.lastFetched {
+                shouldRefresh = Date().timeIntervalSince(lastFetched) > 5 * 60
+            } else {
+                shouldRefresh = true
+            }
+            if shouldRefresh {
+                Task {
+                    await accountStore.fetchQuota(for: id)
+                }
             }
         }
         .toastContainer()
@@ -161,6 +181,7 @@ struct ContentView: View {
             AccountDetailPanel(
                 account: selected,
                 isActive: selected.id == accountStore.activeAccountId,
+                isFetchingQuota: accountStore.isFetchingQuotaForId.contains(selected.id),
                 onActivate: {
                     Task {
                         await activateAccount(selected)
@@ -172,6 +193,11 @@ struct ContentView: View {
                 onDelete: {
                     accountPendingDelete = selected
                     showingDeleteConfirmation = true
+                },
+                onRefreshQuota: {
+                    Task {
+                        await accountStore.fetchQuota(for: selected.id)
+                    }
                 }
             )
             .padding(Theme.Spacing.lg)
@@ -402,6 +428,12 @@ private struct AccountRowCard: View {
                         CapsuleBadge(text: account.planDisplay, color: Theme.Colors.info)
                         CapsuleBadge(text: account.statusText, color: account.statusColor, icon: "circle.fill")
                     }
+
+                    // Mini quota bar
+                    if let quota = account.quotaInfo {
+                        QuotaMiniBar(usedPercent: quota.usedPercent)
+                            .padding(.top, Theme.Spacing.xxs)
+                    }
                 }
 
                 Spacer(minLength: Theme.Spacing.xs)
@@ -447,9 +479,11 @@ private struct AccountRowCard: View {
 private struct AccountDetailPanel: View {
     let account: Account
     let isActive: Bool
+    let isFetchingQuota: Bool
     let onActivate: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onRefreshQuota: () -> Void
 
     var body: some View {
         ScrollView {
@@ -499,6 +533,21 @@ private struct AccountDetailPanel: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .buttonStyle(.bordered)
+
+                    Spacer()
+
+                    Button(action: onRefreshQuota) {
+                        if isFetchingQuota {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("Refresh Quota", systemImage: "arrow.clockwise")
+                                .font(Theme.Typography.caption)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isFetchingQuota || account.isExpired)
+                    .help("Fetch latest usage quota from OpenAI")
                 }
 
                 Group {
@@ -510,6 +559,9 @@ private struct AccountDetailPanel: View {
                     DetailLine(label: "Added", value: account.addedAt.formatted(date: .abbreviated, time: .shortened))
                     DetailLine(label: "Last Used", value: account.lastUsedAt?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet")
                 }
+
+                // Quota section
+                QuotaDetailSection(quota: account.quotaInfo, isFetching: isFetchingQuota)
 
                 Group {
                     Text("Identifiers")
@@ -552,6 +604,144 @@ private struct DetailLine: View {
                 .textSelection(.enabled)
 
             Spacer()
+        }
+    }
+}
+
+// MARK: - Quota UI Components
+
+/// A compact progress bar used in the account row card.
+private struct QuotaMiniBar: View {
+    let usedPercent: Double
+
+    private var barColor: Color {
+        if usedPercent >= 90 { return Theme.Colors.error }
+        if usedPercent >= 70 { return Theme.Colors.warning }
+        return Theme.Colors.success
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Theme.Colors.elevatedSurface)
+                    .frame(height: 4)
+
+                Capsule()
+                    .fill(barColor)
+                    .frame(width: max(4, geo.size.width * usedPercent / 100), height: 4)
+            }
+        }
+        .frame(height: 4)
+    }
+}
+
+/// Full quota section shown inside the account detail panel.
+private struct QuotaDetailSection: View {
+    let quota: QuotaInfo?
+    let isFetching: Bool
+
+    var body: some View {
+        Group {
+            Text("API Quota")
+                .font(Theme.Typography.section)
+                .foregroundStyle(Theme.Colors.textPrimary)
+
+            if isFetching {
+                HStack {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Fetching quota...")
+                        .font(Theme.Typography.footnote)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                }
+            } else if let quota {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    // Progress bar
+                    QuotaProgressBar(usedPercent: quota.usedPercent)
+
+                    // Stats row
+                    HStack {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                            Text(quota.remainingText)
+                                .font(Theme.Typography.body.weight(.semibold))
+                                .foregroundStyle(quotaColor(for: quota.usedPercent))
+
+                            if let resetText = quota.resetText {
+                                Text(resetText)
+                                    .font(Theme.Typography.footnote)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        VStack(alignment: .trailing, spacing: Theme.Spacing.xxs) {
+                            if quota.limitReached {
+                                CapsuleBadge(text: "Limit Reached", color: Theme.Colors.error, icon: "xmark.circle.fill")
+                            } else if quota.usedPercent >= 90 {
+                                CapsuleBadge(text: "Almost Full", color: Theme.Colors.warning, icon: "exclamationmark.triangle.fill")
+                            } else {
+                                CapsuleBadge(text: "Available", color: Theme.Colors.success, icon: "checkmark.circle.fill")
+                            }
+
+                            Text("Updated \(quota.lastFetched.formatted(date: .omitted, time: .shortened))")
+                                .font(Theme.Typography.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+                    }
+                }
+            } else {
+                Text("No quota data — tap Refresh Quota to fetch.")
+                    .font(Theme.Typography.footnote)
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                    .italic()
+            }
+        }
+    }
+
+    private func quotaColor(for used: Double) -> Color {
+        if used >= 90 { return Theme.Colors.error }
+        if used >= 70 { return Theme.Colors.warning }
+        return Theme.Colors.success
+    }
+}
+
+/// A labelled progress bar for the account detail quota section.
+private struct QuotaProgressBar: View {
+    let usedPercent: Double
+
+    private var barColor: Color {
+        if usedPercent >= 90 { return Theme.Colors.error }
+        if usedPercent >= 70 { return Theme.Colors.warning }
+        return Theme.Colors.success
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+            HStack {
+                Text("Used")
+                    .font(Theme.Typography.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                Spacer()
+                Text(String(format: "%.0f%%", usedPercent))
+                    .font(Theme.Typography.footnote.weight(.semibold))
+                    .foregroundStyle(barColor)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Theme.Colors.elevatedSurface)
+                        .frame(height: 8)
+
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(barColor)
+                        .frame(width: max(8, geo.size.width * min(usedPercent, 100) / 100), height: 8)
+                        .animation(Theme.Motion.smooth, value: usedPercent)
+                }
+            }
+            .frame(height: 8)
         }
     }
 }
@@ -668,9 +858,11 @@ struct VersionFooter: View {
     AccountDetailPanel(
         account: .previewActive,
         isActive: true,
+        isFetchingQuota: false,
         onActivate: {},
         onEdit: {},
-        onDelete: {}
+        onDelete: {},
+        onRefreshQuota: {}
     )
     .padding()
     .background(Theme.Colors.background)

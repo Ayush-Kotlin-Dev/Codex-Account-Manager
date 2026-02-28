@@ -20,6 +20,7 @@ struct Account: Identifiable, Codable, Equatable {
     var addedAt: Date
     var lastUsedAt: Date?
     var rateLimitInfo: RateLimitInfo?
+    var quotaInfo: QuotaInfo?
     
     init(
         id: UUID = UUID(),
@@ -33,7 +34,8 @@ struct Account: Identifiable, Codable, Equatable {
         expiresAt: Date,
         addedAt: Date = Date(),
         lastUsedAt: Date? = nil,
-        rateLimitInfo: RateLimitInfo? = nil
+        rateLimitInfo: RateLimitInfo? = nil,
+        quotaInfo: QuotaInfo? = nil
     ) {
         self.id = id
         self.email = email
@@ -47,6 +49,7 @@ struct Account: Identifiable, Codable, Equatable {
         self.addedAt = addedAt
         self.lastUsedAt = lastUsedAt
         self.rateLimitInfo = rateLimitInfo
+        self.quotaInfo = quotaInfo
     }
     
     var isExpired: Bool {
@@ -69,6 +72,10 @@ struct Account: Identifiable, Codable, Equatable {
     }
     
     var isRateLimited: Bool {
+        // Prefer API-fetched quota info if available
+        if let quota = quotaInfo {
+            return quota.limitReached || !quota.allowed
+        }
         guard let rateLimit = rateLimitInfo else { return false }
         return rateLimit.remaining <= 0 && rateLimit.resetAt > Date()
     }
