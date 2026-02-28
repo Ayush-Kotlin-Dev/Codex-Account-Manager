@@ -51,6 +51,7 @@ Codex CLI now uses this account
 | `AccountStore.swift` | SwiftUI ObservableObject, persists accounts to Application Support |
 | `JWTDecoder.swift` | Decodes JWT access tokens to extract account info |
 | `PKCEGenerator.swift` | Generates PKCE code verifiers/challenges using CryptoKit |
+| `QuotaService.swift` | Fetches usage quota from `chatgpt.com/backend-api/wham/usage` |
 
 ## OAuth Configuration
 
@@ -169,3 +170,16 @@ This project shares OAuth logic with the Node.js codex-claude-proxy:
 - Same PKCE implementation
 - Same token exchange flow
 - Both write compatible auth.json format
+- `QuotaService.swift` mirrors `model-api.js` `fetchUsage()` — both call `wham/usage`
+
+## Changelog
+
+### v1.1 (build 2)
+- **feat: Usage Quota Display** — Added `QuotaService.swift` to fetch live usage data from `chatgpt.com/backend-api/wham/usage`. Each account now shows:
+  - A mini 4px quota bar in the account list rows
+  - A full labeled progress bar with `used %` in the detail panel
+  - Remaining quota %, color-coded status badge (green/orange/red), and reset timer
+  - A "Refresh Quota" button with spinner in the action bar
+  - Auto-fetch on launch and on account selection (stale if >5 min old)
+- Added `quotaInfo: QuotaInfo?` to `Account` model; `isRateLimited` now prefers live API data
+- Added `fetchQuota(for:)` and `fetchAllQuotas()` to `AccountStore`

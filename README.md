@@ -11,6 +11,7 @@ A native macOS app for managing multiple OpenAI Codex CLI accounts. Easily switc
 - **Auto-Refresh**: Tokens refreshed automatically before expiry
 - **Modern UI**: Card-based design with avatars, toast notifications, and smooth animations
 - **Quick Switch**: Rotate between accounts when you hit rate limits
+- **Usage Quota Display**: See remaining API quota per account with a live progress bar, color-coded status, and reset timer
 
 
 
@@ -99,11 +100,12 @@ Codex-Account-Manager/
 │   ├── PKCEGenerator.swift               # PKCE code generation
 │   ├── JWTDecoder.swift                  # JWT token parsing
 │   ├── CodexAuthWriter.swift             # Writes to ~/.codex/auth.json
+│   ├── QuotaService.swift                # Fetches usage quota from ChatGPT wham/usage API
 │   ├── Theme.swift                       # Design tokens & styling
 │   ├── ToastManager.swift                # Toast notifications
 │   ├── AvatarView.swift                  # Account avatars & UI components
 │   └── AddAccountSheet.swift             # OAuth authentication sheet
-├── archive-export-install.sh             # Build script (archive → export → install)
+├── archive-install-local.sh              # Build script (archive → install to /Applications)
 └── README.md
 ```
 
