@@ -50,7 +50,7 @@ struct ContentView: View {
                 deleteAccount(account)
             }
         } message: { account in
-            Text("Remove \(account.email)? This only removes it from this app.")
+            Text("\"\(account.email)\" will be removed from Codex Account Manager. Your OpenAI session remains active; you can re-add this account anytime.")
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -63,7 +63,8 @@ struct ContentView: View {
                     } label: {
                         Label("Quick Switch", systemImage: "arrow.left.arrow.right")
                     }
-                    .help("Switch to next available account")
+                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                    .help("Switch to next available account (⌘⇧])")
                 }
 
                 Button {
@@ -167,9 +168,10 @@ struct ContentView: View {
                     }
                     .padding(.bottom, Theme.Spacing.sm)
                 }
+                .safeAreaInset(edge: .bottom) {
+                    VersionFooter()
+                }
             }
-
-            VersionFooter()
         }
         .padding(Theme.Spacing.md)
         .background(Theme.Colors.background)
@@ -258,9 +260,13 @@ struct ContentView: View {
     }
 
     private func activateAccount(_ account: Account) async {
-        activatingAccountId = account.id
+        withAnimation(Theme.Motion.quick) {
+            activatingAccountId = account.id
+        }
         await accountStore.activateAccount(id: account.id)
-        activatingAccountId = nil
+        withAnimation(Theme.Motion.quick) {
+            activatingAccountId = nil
+        }
 
         if accountStore.errorMessage == nil {
             toastManager.success("Activated \(account.email)")
@@ -343,10 +349,12 @@ private struct DashboardHeroCard: View {
             }
 
             HStack(spacing: Theme.Spacing.xs) {
-                CapsuleBadge(text: "\(accountCount) total", color: Theme.Colors.brand)
+                if accountCount != 1 {
+                    CapsuleBadge(text: "\(accountCount) accounts", color: Theme.Colors.brand)
+                }
                 CapsuleBadge(text: "\(availableCount) ready", color: Theme.Colors.success)
                 if activeAccount != nil {
-                    CapsuleBadge(text: "active", color: Theme.Colors.success, icon: "checkmark")
+                    CapsuleBadge(text: "Session Active", color: Theme.Colors.success, icon: "bolt.fill")
                 }
             }
         }
@@ -368,14 +376,14 @@ private struct AccountFilterBar: View {
                 .accessibilityLabel("Search accounts")
 
             HStack {
-                Picker("Status", selection: $filter) {
+                Picker("Status: \(filter.rawValue)", selection: $filter) {
                     ForEach(AccountFilter.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
                 .pickerStyle(.menu)
 
-                Picker("Sort", selection: $sort) {
+                Picker("Sort: \(sort.rawValue)", selection: $sort) {
                     ForEach(AccountSort.allCases) { option in
                         Text(option.rawValue).tag(option)
                     }
@@ -387,6 +395,8 @@ private struct AccountFilterBar: View {
                 Text("\(accountCount)")
                     .font(Theme.Typography.footnote.weight(.semibold))
                     .foregroundStyle(Theme.Colors.textTertiary)
+                    .contentTransition(.numericText(value: Double(accountCount)))
+                    .animation(Theme.Motion.quick, value: accountCount)
                     .padding(.horizontal, Theme.Spacing.xs)
                     .padding(.vertical, Theme.Spacing.xxs)
                     .background(Theme.Colors.elevatedSurface)
@@ -446,10 +456,6 @@ private struct AccountRowCard: View {
                     } else if isActivating {
                         ProgressView()
                             .controlSize(.small)
-                    } else {
-                        Button("Activate", action: onActivate)
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
                     }
 
                     Menu {
@@ -489,7 +495,16 @@ private struct AccountDetailPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                    AvatarView(email: account.email, size: 64, isActive: isActive)
+                    ZStack(alignment: .bottomTrailing) {
+                        AvatarView(email: account.email, size: 64, isActive: isActive)
+                        StatusIndicator(
+                            status: account.isExpired ? .expired 
+                                : account.isRateLimited ? .rateLimited 
+                                : isActive ? .active : .inactive,
+                            size: 22
+                        )
+                        .offset(x: 2, y: 2)
+                    }
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text(account.displayName)
@@ -529,25 +544,13 @@ private struct AccountDetailPanel: View {
                     }
                     .buttonStyle(.bordered)
 
-                    Button(role: .destructive, action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                    }
-                    .buttonStyle(.bordered)
-
                     Spacer()
 
-                    Button(action: onRefreshQuota) {
-                        if isFetchingQuota {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Label("Refresh Quota", systemImage: "arrow.clockwise")
-                                .font(Theme.Typography.caption)
-                        }
+                    Button(role: .destructive, action: onDelete) {
+                        Image(systemName: "trash")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isFetchingQuota || account.isExpired)
-                    .help("Fetch latest usage quota from OpenAI")
+                    .help("Remove this account")
                 }
 
                 Group {
@@ -561,7 +564,12 @@ private struct AccountDetailPanel: View {
                 }
 
                 // Quota section
-                QuotaDetailSection(quota: account.quotaInfo, isFetching: isFetchingQuota)
+                QuotaDetailSection(
+                    quota: account.quotaInfo,
+                    isFetching: isFetchingQuota,
+                    account: account,
+                    onRefreshQuota: onRefreshQuota
+                )
 
                 Group {
                     Text("Identifiers")
@@ -601,7 +609,10 @@ private struct DetailLine: View {
             Text(value)
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.middle)
                 .textSelection(.enabled)
+                .help(value)
 
             Spacer()
         }
@@ -640,12 +651,28 @@ private struct QuotaMiniBar: View {
 private struct QuotaDetailSection: View {
     let quota: QuotaInfo?
     let isFetching: Bool
+    let account: Account
+    let onRefreshQuota: () -> Void
 
     var body: some View {
         Group {
-            Text("API Quota")
-                .font(Theme.Typography.section)
-                .foregroundStyle(Theme.Colors.textPrimary)
+            HStack {
+                Text("API Quota")
+                    .font(Theme.Typography.section)
+                    .foregroundStyle(Theme.Colors.textPrimary)
+                Spacer()
+                Button(action: onRefreshQuota) {
+                    Image(systemName: isFetching ? "arrow.clockwise" : "arrow.clockwise")
+                        .rotationEffect(isFetching ? .degrees(360) : .degrees(0))
+                        .animation(isFetching
+                            ? .linear(duration: 1).repeatForever(autoreverses: false)
+                            : .default, value: isFetching)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.Colors.textSecondary)
+                .disabled(isFetching || account.isExpired)
+                .help("Refresh quota data")
+            }
 
             if isFetching {
                 HStack {
@@ -720,11 +747,11 @@ private struct QuotaProgressBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
             HStack {
-                Text("Used")
+                Text("Remaining")
                     .font(Theme.Typography.footnote.weight(.semibold))
                     .foregroundStyle(Theme.Colors.textTertiary)
                 Spacer()
-                Text(String(format: "%.0f%%", usedPercent))
+                Text(String(format: "%.0f%%", max(0, 100 - usedPercent)))
                     .font(Theme.Typography.footnote.weight(.semibold))
                     .foregroundStyle(barColor)
             }
@@ -737,7 +764,7 @@ private struct QuotaProgressBar: View {
 
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(barColor)
-                        .frame(width: max(8, geo.size.width * min(usedPercent, 100) / 100), height: 8)
+                        .frame(width: max(8, geo.size.width * min(100 - usedPercent, 100) / 100), height: 8)
                         .animation(Theme.Motion.smooth, value: usedPercent)
                 }
             }
@@ -790,10 +817,12 @@ private struct EditAccountSheet: View {
                     TextField("Display name", text: $nickname)
                         .textContentType(.nickname)
 
-                    TextField("Plan", text: $planType)
-#if os(iOS)
-                        .textInputAutocapitalization(.never)
-#endif
+                    Picker("Plan", selection: $planType) {
+                        Text("Free").tag("free")
+                        Text("Pro").tag("pro")
+                        Text("Team").tag("team")
+                        Text("Enterprise").tag("enterprise")
+                    }
                 }
 
                 Section {

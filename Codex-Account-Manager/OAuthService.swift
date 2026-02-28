@@ -102,6 +102,14 @@ class OAuthService: NSObject, ObservableObject {
         }
     }
     
+    func cancelAuthentication() {
+        guard isAuthenticating else { return }
+        cleanup()
+        authContinuation?.resume(throwing: OAuthError.serverError("Authentication cancelled by user"))
+        authContinuation = nil
+        isAuthenticating = false
+    }
+    
     // MARK: - Private Methods
     
     private func startCallbackServer(state: String, pkce: PKCEPair) async throws -> UInt16 {

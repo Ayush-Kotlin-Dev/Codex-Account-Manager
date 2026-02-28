@@ -17,10 +17,30 @@ enum Theme {
     enum Colors {
         static let brand = Color(red: 0.08, green: 0.45, blue: 0.95)
         static let brandAccent = Color(red: 0.00, green: 0.72, blue: 0.71)
-        static let success = Color.green
-        static let warning = Color.orange
-        static let error = Color.red
-        static let info = Color.blue
+        static let success = platformColor(
+            light: Color(red: 0.10, green: 0.68, blue: 0.40),
+            dark:  Color(red: 0.18, green: 0.82, blue: 0.50)
+        )
+        static let warning = platformColor(
+            light: Color(red: 0.93, green: 0.58, blue: 0.10),
+            dark:  Color(red: 1.00, green: 0.72, blue: 0.28)
+        )
+        static let error = platformColor(
+            light: Color(red: 0.88, green: 0.22, blue: 0.22),
+            dark:  Color(red: 1.00, green: 0.40, blue: 0.40)
+        )
+        static let info = platformColor(
+            light: Color(red: 0.18, green: 0.52, blue: 0.96),
+            dark:  Color(red: 0.40, green: 0.68, blue: 1.00)
+        )
+        static let selectionBackground = platformColor(
+            light: Color(red: 0.08, green: 0.45, blue: 0.95).opacity(0.12),
+            dark:  Color(red: 0.08, green: 0.45, blue: 0.95).opacity(0.18)
+        )
+        static let selectionBorder = platformColor(
+            light: Color(red: 0.08, green: 0.45, blue: 0.95).opacity(0.42),
+            dark:  Color(red: 0.08, green: 0.45, blue: 0.95).opacity(0.55)
+        )
 
         static let background = platformColor(light: Color(red: 0.96, green: 0.97, blue: 0.99), dark: Color(red: 0.08, green: 0.10, blue: 0.14))
         static let surface = platformColor(light: .white, dark: Color(red: 0.12, green: 0.14, blue: 0.19))
@@ -110,9 +130,9 @@ enum Theme {
         static let hero = Font.system(.largeTitle, design: .rounded).weight(.bold)
         static let title = Font.system(.title2, design: .rounded).weight(.semibold)
         static let section = Font.system(.headline, design: .rounded).weight(.semibold)
-        static let body = Font.body
-        static let caption = Font.caption
-        static let footnote = Font.footnote
+        static let body    = Font.system(.body, design: .default)
+        static let caption  = Font.system(.caption, design: .rounded)
+        static let footnote = Font.system(.footnote, design: .rounded)
     }
 }
 
@@ -136,11 +156,11 @@ extension View {
             .padding(Theme.Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                    .fill(isHighlighted ? Theme.Colors.brand.opacity(0.14) : Theme.Colors.surface)
+                    .fill(isHighlighted ? Theme.Colors.selectionBackground : Theme.Colors.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                    .stroke(isHighlighted ? Theme.Colors.brand.opacity(0.45) : Theme.Colors.cardBorder, lineWidth: isHighlighted ? 1.5 : 1)
+                    .stroke(isHighlighted ? Theme.Colors.selectionBorder : Theme.Colors.cardBorder, lineWidth: isHighlighted ? 1.5 : 1)
             )
             .animation(Theme.Motion.smooth, value: isHighlighted)
     }

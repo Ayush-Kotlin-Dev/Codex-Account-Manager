@@ -86,22 +86,23 @@ class ToastManager: ObservableObject {
 struct ToastView: View {
     let toast: Toast
     let onDismiss: () -> Void
-    
+
     @State private var isVisible = false
-    
+    @State private var timerProgress: CGFloat = 1.0
+
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             Image(systemName: toast.type.icon)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(toast.type.color)
-            
+
             Text(toast.message)
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Colors.textPrimary)
                 .lineLimit(2)
-            
+
             Spacer()
-            
+
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .medium))
@@ -110,7 +111,8 @@ struct ToastView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.sm)
+        .padding(.bottom, Theme.Spacing.xs)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                 .fill(Theme.Colors.surface)
@@ -120,11 +122,25 @@ struct ToastView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                 .stroke(toast.type.color.opacity(0.3), lineWidth: 1)
         )
+        .overlay(alignment: .bottom) {
+            GeometryReader { geo in
+                Capsule()
+                    .fill(toast.type.color.opacity(0.45))
+                    .frame(width: geo.size.width * timerProgress, height: 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 1)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+        }
         .opacity(isVisible ? 1 : 0)
-        .offset(y: isVisible ? 0 : -20)
+        .offset(y: isVisible ? 0 : 20)
         .onAppear {
             withAnimation(Theme.Motion.spring) {
                 isVisible = true
+            }
+            withAnimation(.linear(duration: toast.duration)) {
+                timerProgress = 0
             }
         }
     }
@@ -134,7 +150,7 @@ struct ToastView: View {
 
 struct ToastContainer: ViewModifier {
     @StateObject private var toastManager = ToastManager.shared
-    
+
     func body(content: Content) -> some View {
         content
             .overlay(
@@ -143,13 +159,13 @@ struct ToastContainer: ViewModifier {
                         ToastView(toast: toast) {
                             toastManager.dismiss(toast)
                         }
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .frame(maxWidth: 400)
-                , alignment: .top
+                .padding(.bottom, Theme.Spacing.xl)
+                .padding(.trailing, Theme.Spacing.lg)
+                .frame(maxWidth: 380)
+                , alignment: .bottomTrailing
             )
     }
 }

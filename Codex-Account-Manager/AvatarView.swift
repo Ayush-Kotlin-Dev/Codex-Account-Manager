@@ -54,17 +54,19 @@ struct AvatarView: View {
                     )
                 )
                 .frame(width: size, height: size)
-            
+
             Text(initials)
                 .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            
+
             if isActive {
                 Circle()
-                    .stroke(.green, lineWidth: 3)
+                    .stroke(Theme.Colors.success, lineWidth: 3)
                     .frame(width: size + 6, height: size + 6)
+                    .transition(.scale.combined(with: .opacity))
             }
         }
+        .animation(Theme.Motion.spring, value: isActive)
     }
 }
 
@@ -174,14 +176,14 @@ struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.xl) {
             Spacer()
-            
+
             ZStack {
                 Circle()
                     .fill(Theme.Colors.elevatedSurface)
-                    .frame(width: 100, height: 100)
-                
+                    .frame(width: 80, height: 80)
+
                 Image(systemName: icon)
-                    .font(.system(size: 44, weight: .light))
+                    .font(.system(size: 36, weight: .light))
                     .foregroundStyle(Theme.Colors.textSecondary)
             }
             

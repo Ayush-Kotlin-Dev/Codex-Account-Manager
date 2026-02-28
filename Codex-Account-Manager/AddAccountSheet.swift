@@ -13,6 +13,7 @@ struct AddAccountSheet: View {
     @StateObject private var oauthService = OAuthService.shared
     @StateObject private var toastManager = ToastManager.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var waitingTooLong = false
 
     var body: some View {
         NavigationStack {
@@ -56,6 +57,22 @@ struct AddAccountSheet: View {
                     LoadingView(message: "Waiting for authentication callback...")
                         .frame(maxWidth: .infinity)
                         .panelStyle()
+
+                    if waitingTooLong {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .foregroundStyle(Theme.Colors.warning)
+                            Text("Taking longer than expected. You can cancel and try again.")
+                                .font(Theme.Typography.footnote)
+                                .foregroundStyle(Theme.Colors.warning)
+                        }
+                        .padding(Theme.Spacing.sm)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                                .fill(Theme.Colors.warning.opacity(0.10))
+                        )
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
 
                 if let error = oauthService.authError {
@@ -101,13 +118,29 @@ struct AddAccountSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
+                        if oauthService.isAuthenticating {
+                            oauthService.cancelAuthentication()
+                        }
                         dismiss()
                     }
-                    .disabled(oauthService.isAuthenticating)
                 }
             }
         }
         .frame(minWidth: 500, minHeight: 500)
+        .task(id: oauthService.isAuthenticating) {
+            guard oauthService.isAuthenticating else {
+                waitingTooLong = false
+                return
+            }
+            do {
+                try await Task.sleep(for: .seconds(45))
+                withAnimation(Theme.Motion.smooth) {
+                    waitingTooLong = true
+                }
+            } catch {
+                // Task cancelled — auth completed or cancelled normally
+            }
+        }
     }
 
     private func startAuthentication() {
